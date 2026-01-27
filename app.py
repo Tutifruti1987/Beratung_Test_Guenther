@@ -3,10 +3,11 @@ import google.generativeai as genai
 import requests
 from PIL import Image
 from io import BytesIO
-import pandas as pd # Neu für die Tabellen-Anzeige
+import time
+import pandas as pd
 
 # --- KONFIGURATION ---
-st.set_page_config(page_title="R+V Profi-Berater", page_icon="🦁", layout="wide")
+st.set_page_config(page_title="R+V Berater Günther", page_icon="🦁", layout="wide")
 
 # --- FUNKTION: R+V LOGO ---
 def get_logo():
@@ -22,120 +23,133 @@ logo_img = get_logo()
 # --- DESIGN (CSS) ---
 st.markdown("""
 <style>
-    .stChatMessage p { font-size: 1.15rem !important; }
-    .stChatMessage { border-radius: 15px; padding: 15px; margin-bottom: 10px; border: 1px solid #f0f2f6; }
-    div[data-testid="stMetricValue"] { font-size: 1.7rem !important; color: #003366; }
+    .stChatMessage p { font-size: 1.2rem !important; line-height: 1.6 !important; }
+    .stChatMessage { border-radius: 15px; padding: 20px; margin-bottom: 15px; border: 1px solid #e0e6ed; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+    div[data-testid="stMetricValue"] { font-size: 2rem !important; color: #003366; font-weight: bold; }
+    .stAlert { border-radius: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- MATHEMATIK-FUNKTIONEN ---
-def berechne_werte(brutto, steuerklasse, kinder, alter):
+# --- MATHEMATIK-KERN ---
+def berechne_analyse(brutto, steuerklasse, kinder, alter):
     if brutto <= 0: return 0, 0, 0, []
     
-    # Netto-Schätzung
-    faktoren = {1: 0.39, 2: 0.36, 3: 0.30, 4: 0.39, 5: 0.52, 6: 0.60}
-    netto = brutto * (1 - (faktoren.get(steuerklasse, 0.40) - (kinder * 0.01)))
-    netto_hh = netto + (kinder * 250)
+    # Netto-Schätzung nach deutschen Standards
+    st_faktor = {1: 0.39, 2: 0.36, 3: 0.30, 4: 0.39, 5: 0.52, 6: 0.60}
+    netto_basis = brutto * (1 - (st_faktor.get(steuerklasse, 0.40) - (kinder * 0.012)))
+    netto_hh = netto_basis + (kinder * 250)
     
-    # Lücken
-    jahre = 67 - alter
-    wunsch_rente = netto_hh * 0.85 * ((1.02)**jahre)
-    rente_luecke = max(0, wunsch_rente - (brutto * 0.48))
-    bu_luecke = max(0, netto_hh - (brutto * 0.34))
+    # DIN 77230 Orientierung: Absicherungsbedarf
+    jahre_bis_rente = 67 - alter
+    wunsch_niveau = 0.85 # 85% vom Netto
+    inflation = 1.02 # 2%
+    ziel_rente = netto_hh * wunsch_niveau * (inflation ** jahre_bis_rente)
     
-    # Förderung
+    r_luecke = max(0, ziel_rente - (brutto * 0.48))
+    b_luecke = max(0, netto_hh - (brutto * 0.34)) # Erwerbsminderungs-Lücke
+    
     foerder = []
-    if steuerklasse != 6: foerder.append("bAV")
-    if kinder > 0: foerder.append("Riester (Zulagen)")
-    if brutto > 5000: foerder.append("Basisrente (Steuervorteil)")
+    if steuerklasse != 6: foerder.append("Betriebliche Altersvorsorge (bAV)")
+    if kinder > 0: foerder.append("Riester-Förderung (Zulagen)")
+    if brutto > 5000: foerder.append("Basisrente (Rürup) für Steuervorteile")
     
-    return netto_hh, rente_luecke, bu_luecke, foerder
+    return netto_hh, r_luecke, b_luecke, foerder
 
 # --- SIDEBAR ---
 with st.sidebar:
-    if logo_img: st.image(logo_img, width=60)
-    st.header("📋 Kundendaten")
+    if logo_img: st.image(logo_img, width=80)
+    st.header("📋 Dateneingabe")
     status = st.selectbox("Familienstand", ["Ledig", "Verheiratet", "Verwitwet"])
-    steuerklasse = st.selectbox("Steuerklasse", [1, 2, 3, 4, 5, 6], index=2 if status=="Verheiratet" else 0)
-    kinder = st.number_input("Kinder", 0, 8, 0)
+    st_klasse = st.selectbox("Steuerklasse", [1, 2, 3, 4, 5, 6], index=2 if status=="Verheiratet" else 0)
+    kinder = st.number_input("Anzahl Kinder", 0, 10, 0)
     alter = st.number_input("Alter", 18, 67, 35)
-    brutto = st.number_input("Brutto (Monat) *", 0, 20000, 0)
-    if st.button("Chat zurücksetzen"):
+    brutto = st.number_input("Bruttogehalt (mtl.) in € *", 0, 25000, 0, step=100)
+    
+    st.divider()
+    if st.button("Beratung neu starten"):
         st.session_state.messages = []
         st.rerun()
 
-# --- BERECHNUNG AKTUALISIEREN ---
-n_hh, r_luecke, b_luecke, f_liste = berechne_werte(brutto, steuerklasse, kinder, alter)
+# --- ANALYSE-WERTE ---
+n_hh, r_luecke, b_luecke, f_wege = berechne_analyse(brutto, st_klasse, kinder, alter)
 
-# --- HEADER & DASHBOARD ---
-c1, c2 = st.columns([1, 5])
+# --- HEADER & COCKPIT ---
+c1, c2 = st.columns([1, 4])
 with c1: 
-    if logo_img: st.image(logo_img, width=100)
+    if logo_img: st.image(logo_img, width=120)
 with c2: 
-    st.title("Versicherungs-Checkup")
-    st.caption(f"Aktuelle Konfiguration: {status}, StKl. {steuerklasse}, {kinder} Kind(er)")
+    st.title("Persönliche R+V Vorsorgeanalyse")
+    st.subheader(f"Berater: Günther")
 
 if brutto == 0:
-    st.info("👈 Bitte gib links dein Brutto-Einkommen ein, um die Analyse zu starten.")
+    st.warning("👈 Willkommen! Bitte gib links dein Bruttogehalt ein, damit ich deine Vorsorgesituation analysieren kann.")
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Netto-Haushalt", f"{n_hh:.0f} €")
-col2.metric("Rentenlücke", f"{r_luecke:.0f} €", delta="- Bedarf" if brutto>0 else None, delta_color="inverse")
-col3.metric("BU-Lücke", f"{b_luecke:.0f} €", delta="- Risiko" if brutto>0 else None, delta_color="inverse")
-col4.metric("Förderwege", f"{len(f_liste)}")
+col1.metric("Haushalts-Netto", f"{n_hh:.0f} €")
+col2.metric("Rentenlücke", f"{r_luecke:.0f} €", delta="Bedarf" if brutto>0 else None, delta_color="inverse")
+col3.metric("BU-Lücke", f"{b_luecke:.0f} €", delta="Risiko" if brutto>0 else None, delta_color="inverse")
+col4.metric("Förderwege", f"{len(f_wege)}")
 
 st.divider()
 
-# --- CHAT LOGIK ---
+# --- CHAT-SYSTEM ---
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# Der Prompt wird HIER bei jedem Durchlauf neu generiert mit den AKTUELLEN Werten
-aktuelle_daten_hinweis = f"""
-AKTUELLE DATEN AUS DEN EINGABEFELDERN:
-- Brutto: {brutto} € (Falls 0, bitte den User höflich auffordern, es links einzutragen)
-- Netto: {n_hh:.0f} €
-- Rentenlücke: {r_luecke:.0f} €
-- BU-Lücke: {b_luecke:.0f} €
-- Kinder: {kinder}
-- Steuerklasse: {steuerklasse}
-"""
+# Der umfassende Berater-Prompt (Deine Instruktionen)
+system_prompt = f"""
+Du bist Günther, ein erfahrener Versicherungsberater der R+V Versicherung.
+QUALIFIKATION: Vollumfänglich (Kranken, Vorsorge, Geldanlage, Komposit, Tier).
+STANDARDS: Du berätst nach deutschem Recht, IDD und DIN 77230.
+TONFALL: Hilfsbereit, kundenorientiert, professionell, kurze Sätze, "Du"-Form.
+REGEL: Keine Halluzinationen. Nutze reale R+V Produkte (z.B. R+V BerufsunfähigkeitsPolice, R+V PrivatRente).
 
-system_instruction = f"""
-Du bist Günther, ein R+V Berater.
-Regeln:
-1. Antworte kurz und kundenorientiert ("Du").
-2. Wenn der User "Ja" zur Analyse sagt oder nach Zahlen fragt, erstelle eine Markdown-Tabelle.
-3. Berücksichtige IMMER die Werte aus 'AKTUELLE DATEN AUS DEN EINGABEFELDERN'.
-4. Falls Brutto = 0 ist, erkläre, dass du ohne diese Angabe keine Lücken berechnen kannst.
-{aktuelle_daten_hinweis}
+AKTUELLE KUNDENDATEN:
+- Alter: {alter}, Steuerklasse: {st_klasse}, Kinder: {kinder}
+- Monatliches Brutto: {brutto} €
+- Berechnetes Netto: {n_hh:.0f} €
+- Rentenlücke (inflationsbereinigt): {r_luecke:.0f} €
+- BU-Lücke (Existenzrisiko): {b_luecke:.0f} €
+- Mögliche Förderungen: {", ".join(f_wege) if f_wege else "Keine direkt ersichtlich"}
+
+AUFGABE:
+1. Wenn der Kunde noch kein Brutto (0 €) eingegeben hat, weise höflich darauf hin.
+2. Beginne das Gespräch erst richtig, wenn der Kunde zustimmt.
+3. Bereite Ergebnisse anschaulich auf (Nutze Tabellen für Lücken).
+4. Gehe auf Bedürfnisse ein und priorisiere Existenzschutz (BU) vor Altersvorsorge (DIN 77230).
 """
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    st.session_state.messages.append({"role": "assistant", "content": "### 👋 Hallo!\nIch bin Günther. Soll ich deine aktuellen Daten analysieren und in die Beratung einsteigen?"})
+    st.session_state.messages.append({"role": "assistant", "content": "Hallo ich bin Günther, dein persönlicher Versicherungsberater, wie kann ich dir helfen? Soll ich deine aktuelle Vorsorgesituation einmal analysieren?"})
 
 for m in st.session_state.messages:
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
-if prompt := st.chat_input("Deine Nachricht..."):
+if prompt := st.chat_input("Deine Nachricht an Günther..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        # Nutzung des stabilen Flash-Modells
         model = genai.GenerativeModel('models/gemini-2.0-flash')
-        
-        # Verlauf zusammenbauen
-        history = [{"role": "user", "parts": [system_instruction]}]
+        history = [{"role": "user", "parts": [system_prompt]}]
         for m in st.session_state.messages:
             role = "user" if m["role"] == "user" else "model"
             history.append({"role": role, "parts": [m["content"]]})
             
-        with st.spinner("Günther rechnet..."):
-            response = model.generate_content(history)
-            st.chat_message("assistant").markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
+        with st.spinner("Günther erstellt deine Analyse..."):
+            # Retry-Logik gegen Fehler 429
+            for i in range(3): # 3 Versuche
+                try:
+                    response = model.generate_content(history)
+                    st.chat_message("assistant").markdown(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    break
+                except Exception as e:
+                    if "429" in str(e) and i < 2:
+                        time.sleep(2) # Kurz warten
+                        continue
+                    else: raise e
             
     except Exception as e:
-        st.error(f"Fehler: {e}")
+        st.error(f"Hinweis: Der Server ist gerade stark ausgelastet ({e}). Bitte sende deine Nachricht in 10 Sekunden nochmal.")
