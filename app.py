@@ -1,4 +1,5 @@
 import streamlit as st
+import matplotlib.pyplot as plt # Neu für die Grafik
 import google.generativeai as genai
 import requests
 from PIL import Image
@@ -75,6 +76,30 @@ with st.sidebar:
 
 # --- BERECHNUNG DER WERTE ---
 n_hh, r_luecke, b_luecke, f_anzahl = berechne_analyse(brutto, st_klasse, kinder, alter)
+
+# --- NEUE FUNKTION: GRAFIK ERZEUGEN ---
+def erzeuge_luecken_chart(n_hh, r_luecke, b_luecke):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    kategorien = ['Netto heute', 'Ziel-Rente', 'EM-Rente (Staat)']
+    werte = [n_hh, n_hh * 0.85, n_hh * 0.34] # Vergleichswerte
+    farben = ['#003366', '#ffcc00', '#cc0000'] # R+V Farben (Blau, Gelb, Rot)
+
+    ax.bar(kategorien, werte, color=farben)
+    ax.set_ylabel('Betrag in €')
+    ax.set_title('Deine monatliche Absicherung im Vergleich')
+    
+    # Werte an die Balken schreiben
+    for i, v in enumerate(werte):
+        ax.text(i, v + 50, f"{v:.0f}€", ha='center', fontweight='bold')
+    
+    st.pyplot(fig)
+
+# --- IM HAUPTBEREICH (unter den Kacheln einbauen) ---
+if brutto > 0:
+    st.write("### 📊 Deine Vorsorgesituation auf einen Blick")
+    erzeuge_luecken_chart(n_hh, r_luecke, b_luecke)
+    st.caption("Die Grafik zeigt dein aktuelles Netto im Vergleich zur benötigten Rente und zur staatlichen Basis-Absicherung bei Berufsunfähigkeit.")
+
 
 # --- DASHBOARD HEADER ---
 c1, c2 = st.columns([1, 4])
