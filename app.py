@@ -3,169 +3,139 @@ import google.generativeai as genai
 import requests
 from PIL import Image
 from io import BytesIO
-import time
+import pandas as pd # Neu für die Tabellen-Anzeige
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="R+V Profi-Berater", page_icon="🦁", layout="wide")
 
-# --- FUNKTION: R+V LOGO LADEN ---
+# --- FUNKTION: R+V LOGO ---
 def get_logo():
     url = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/R%2BV-Logo.svg/512px-R%2BV-Logo.svg.png"
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=2)
-        if response.status_code == 200:
-            return Image.open(BytesIO(response.content))
-    except:
-        pass
-    return None 
+        return Image.open(BytesIO(response.content))
+    except: return None 
 
 logo_img = get_logo()
 
 # --- DESIGN (CSS) ---
 st.markdown("""
 <style>
-    .stChatMessage p { font-size: 1.2rem !important; line-height: 1.6 !important; }
-    .stChatMessage { border: 1px solid #e0e0e0; border-radius: 10px; padding: 10px; margin-bottom: 10px; }
-    div[data-testid="stMetricValue"] { font-size: 1.8rem !important; }
-    .stAlert { font-weight: bold; }
+    .stChatMessage p { font-size: 1.15rem !important; }
+    .stChatMessage { border-radius: 15px; padding: 15px; margin-bottom: 10px; border: 1px solid #f0f2f6; }
+    div[data-testid="stMetricValue"] { font-size: 1.7rem !important; color: #003366; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- MATHEMATIK ---
-def berechne_netto_genauer(brutto, steuerklasse, kinder):
-    if brutto == 0: return 0, 0
+# --- MATHEMATIK-FUNKTIONEN ---
+def berechne_werte(brutto, steuerklasse, kinder, alter):
+    if brutto <= 0: return 0, 0, 0, []
+    
+    # Netto-Schätzung
     faktoren = {1: 0.39, 2: 0.36, 3: 0.30, 4: 0.39, 5: 0.52, 6: 0.60}
-    abzug_quote = faktoren.get(steuerklasse, 0.40) - (kinder * 0.01)
-    if abzug_quote < 0.2: abzug_quote = 0.2
-    netto = brutto * (1 - abzug_quote)
-    return netto, netto + (kinder * 250)
-
-def ermittle_foerderung(brutto, steuerklasse, kinder, status):
-    potenziale = []
-    if brutto == 0: return []
-    if steuerklasse != 6: potenziale.append("bAV (Direktversicherung) - Sozialabgaben sparen")
-    if kinder > 0: potenziale.append(f"Riester-Rente - {kinder}x Kinderzulage sichern")
-    elif brutto < 2500: potenziale.append("Riester-Rente - Förderquote prüfen")
-    if brutto > 5200 or steuerklasse in [1, 3]: potenziale.append("Basisrente (Rürup) - Steuerlast senken")
-    return potenziale
-
-def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
-    if brutto == 0: return 0, 0
-    jahre = rentenalter - alter
-    gesetzl_rente = brutto * 0.48 
-    kaufkraft = (1 + (inflation/100)) ** jahre
-    wunsch_rente = netto_hh * 0.85 * kaufkraft
-    rente_luecke = max(0, wunsch_rente - gesetzl_rente)
-    # BU
-    em_rente = brutto * 0.34
-    bu_luecke = max(0, netto_hh - em_rente)
-    return rente_luecke, bu_luecke
+    netto = brutto * (1 - (faktoren.get(steuerklasse, 0.40) - (kinder * 0.01)))
+    netto_hh = netto + (kinder * 250)
+    
+    # Lücken
+    jahre = 67 - alter
+    wunsch_rente = netto_hh * 0.85 * ((1.02)**jahre)
+    rente_luecke = max(0, wunsch_rente - (brutto * 0.48))
+    bu_luecke = max(0, netto_hh - (brutto * 0.34))
+    
+    # Förderung
+    foerder = []
+    if steuerklasse != 6: foerder.append("bAV")
+    if kinder > 0: foerder.append("Riester (Zulagen)")
+    if brutto > 5000: foerder.append("Basisrente (Steuervorteil)")
+    
+    return netto_hh, rente_luecke, bu_luecke, foerder
 
 # --- SIDEBAR ---
 with st.sidebar:
-    if logo_img:
-        st.image(logo_img, width=60)
-    else:
-        st.header("🦁 R+V") 
-        
-    st.header("Kundenprofil")
+    if logo_img: st.image(logo_img, width=60)
+    st.header("📋 Kundendaten")
     status = st.selectbox("Familienstand", ["Ledig", "Verheiratet", "Verwitwet"])
     steuerklasse = st.selectbox("Steuerklasse", [1, 2, 3, 4, 5, 6], index=2 if status=="Verheiratet" else 0)
     kinder = st.number_input("Kinder", 0, 8, 0)
     alter = st.number_input("Alter", 18, 67, 35)
-    
-    # Startwert 0
-    brutto = st.number_input("Brutto (Monat) *", min_value=0, max_value=20000, value=0, help="Bitte hier dein Bruttogehalt eingeben.")
-    
-    st.divider()
-    if st.button("Neustart"):
+    brutto = st.number_input("Brutto (Monat) *", 0, 20000, 0)
+    if st.button("Chat zurücksetzen"):
         st.session_state.messages = []
         st.rerun()
 
-# --- HAUPTBEREICH ---
-c1, c2 = st.columns([1, 6])
-with c1:
-    if logo_img:
-        st.image(logo_img, width=100)
-    else:
-        st.title("🦁")
-with c2:
-    st.title("Profi-Bedarfsanalyse")
-    st.caption(f"Status: {status} | Steuerklasse {steuerklasse} | {kinder} Kinder")
+# --- BERECHNUNG AKTUALISIEREN ---
+n_hh, r_luecke, b_luecke, f_liste = berechne_werte(brutto, steuerklasse, kinder, alter)
 
-# LOGIK: WENN BRUTTO 0
+# --- HEADER & DASHBOARD ---
+c1, c2 = st.columns([1, 5])
+with c1: 
+    if logo_img: st.image(logo_img, width=100)
+with c2: 
+    st.title("Versicherungs-Checkup")
+    st.caption(f"Aktuelle Konfiguration: {status}, StKl. {steuerklasse}, {kinder} Kind(er)")
+
 if brutto == 0:
-    st.warning("⚠️ Bitte gib zuerst dein Brutto-Einkommen in der Seitenleiste (links) ein.")
-    netto_hh = 0
-    rente_luecke = 0
-    bu_luecke = 0
-    foerder_liste = []
-    foerder_str = ""
-else:
-    netto, netto_hh = berechne_netto_genauer(brutto, steuerklasse, kinder)
-    rente_luecke, bu_luecke = berechne_alle_luecken(brutto, netto_hh, alter, 67, 2.0)
-    foerder_liste = ermittle_foerderung(brutto, steuerklasse, kinder, status)
-    foerder_str = "\n- ".join(foerder_liste)
+    st.info("👈 Bitte gib links dein Brutto-Einkommen ein, um die Analyse zu starten.")
 
-# KACHELN
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Dein Netto (mtl.)", f"{netto_hh:.0f} €")
-col2.metric("Rentenlücke", f"{rente_luecke:.0f} €", delta="- Bedarf" if brutto > 0 else None, delta_color="inverse")
-col3.metric("BU-Lücke", f"{bu_luecke:.0f} €", delta="- Risiko" if brutto > 0 else None, delta_color="inverse")
-col4.metric("Förder-Chancen", f"{len(foerder_liste)}", delta="Möglich" if brutto > 0 else None, delta_color="normal")
+col1.metric("Netto-Haushalt", f"{n_hh:.0f} €")
+col2.metric("Rentenlücke", f"{r_luecke:.0f} €", delta="- Bedarf" if brutto>0 else None, delta_color="inverse")
+col3.metric("BU-Lücke", f"{b_luecke:.0f} €", delta="- Risiko" if brutto>0 else None, delta_color="inverse")
+col4.metric("Förderwege", f"{len(f_liste)}")
 
 st.divider()
 
-# --- KI GÜNTHER ---
+# --- CHAT LOGIK ---
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-system_prompt = f"""
-Du bist Günther, R+V Experte.
-Kunde: {alter}J, {status}, {kinder} Kinder. Brutto {brutto}.
-Lücken (nur relevant wenn Brutto > 0):
-- Rentenlücke: {rente_luecke:.0f} €
-- BU-LÜCKE: {bu_luecke:.0f} €
+# Der Prompt wird HIER bei jedem Durchlauf neu generiert mit den AKTUELLEN Werten
+aktuelle_daten_hinweis = f"""
+AKTUELLE DATEN AUS DEN EINGABEFELDERN:
+- Brutto: {brutto} € (Falls 0, bitte den User höflich auffordern, es links einzutragen)
+- Netto: {n_hh:.0f} €
+- Rentenlücke: {r_luecke:.0f} €
+- BU-Lücke: {b_luecke:.0f} €
+- Kinder: {kinder}
+- Steuerklasse: {steuerklasse}
+"""
 
+system_instruction = f"""
+Du bist Günther, ein R+V Berater.
 Regeln:
-1. Wenn Brutto=0, bitte höflich um Eingabe.
-2. Wenn Brutto da ist: Analysiere erst nach "Go" des Kunden.
-3. Sei empathisch, nutze das "Du".
-4. Empfiehl R+V Produkte.
+1. Antworte kurz und kundenorientiert ("Du").
+2. Wenn der User "Ja" zur Analyse sagt oder nach Zahlen fragt, erstelle eine Markdown-Tabelle.
+3. Berücksichtige IMMER die Werte aus 'AKTUELLE DATEN AUS DEN EINGABEFELDERN'.
+4. Falls Brutto = 0 ist, erkläre, dass du ohne diese Angabe keine Lücken berechnen kannst.
+{aktuelle_daten_hinweis}
 """
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    intro_text = f"### 👋 Hallo!\nIch bin Günther, dein persönlicher R+V Berater.\n\nSoll ich deine Daten analysieren und wir steigen gemeinsam in die Versicherungsberatung ein?"
-    st.session_state.messages.append({"role": "assistant", "content": intro_text})
+    st.session_state.messages.append({"role": "assistant", "content": "### 👋 Hallo!\nIch bin Günther. Soll ich deine aktuellen Daten analysieren und in die Beratung einsteigen?"})
 
 for m in st.session_state.messages:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
+    with st.chat_message(m["role"]): st.markdown(m["content"])
 
-if prompt := st.chat_input("Antworte Günther (z.B. 'Ja, gerne')..."):
+if prompt := st.chat_input("Deine Nachricht..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
+        # Nutzung des stabilen Flash-Modells
         model = genai.GenerativeModel('models/gemini-2.0-flash')
         
-        # Wir schicken nur die letzten Nachrichten, um Tokens zu sparen
-        history = [{"role": "user", "parts": [system_prompt]}]
-        for m in st.session_state.messages[-5:]: # Nur die letzten 5 Nachrichten
-            r = "user" if m["role"] == "user" else "model"
-            history.append({"role": r, "parts": [m["content"]]})
+        # Verlauf zusammenbauen
+        history = [{"role": "user", "parts": [system_instruction]}]
+        for m in st.session_state.messages:
+            role = "user" if m["role"] == "user" else "model"
+            history.append({"role": role, "parts": [m["content"]]})
             
-        with st.spinner("Günther überlegt kurz..."):
-            # Ein kleiner technischer Trick: Wir warten 1 Sekunde vor dem Senden
-            time.sleep(1) 
+        with st.spinner("Günther rechnet..."):
             response = model.generate_content(history)
             st.chat_message("assistant").markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             
     except Exception as e:
-        if "429" in str(e):
-            st.warning("⚠️ Google sagt: 'Zu schnell!'. Bitte warte kurz 30-60 Sekunden und probiere es dann nochmal.")
-        else:
-            st.error(f"Fehler: {e}")
+        st.error(f"Fehler: {e}")
