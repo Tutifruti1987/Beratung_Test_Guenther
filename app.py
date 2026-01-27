@@ -4,26 +4,33 @@ import requests
 from PIL import Image
 from io import BytesIO
 
-# --- FUNKTION: R+V LOGO LADEN ---
+# --- FUNKTION: R+V LOGO SICHER LADEN ---
 def load_ruv_logo():
     url = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/R%2BV-Logo.svg/512px-R%2BV-Logo.svg.png"
     try:
-        response = requests.get(url)
+        # Wir tun so, als wären wir ein normaler Browser (User-Agent), 
+        # sonst blockiert Wikipedia oft den Zugriff.
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=5)
+        response.raise_for_status() # Prüfen ob Fehler 404/403
         img = Image.open(BytesIO(response.content))
         return img
-    except:
-        return "🛡️"
+    except Exception as e:
+        print(f"Bild konnte nicht geladen werden: {e}")
+        return None # Wir geben None zurück, kein Emoji!
 
 # --- KONFIGURATION ---
-ruv_icon = load_ruv_logo()
-st.set_page_config(page_title="R+V Profi-Berater", page_icon=ruv_icon, layout="wide")
+# Wir laden das Logo einmal am Anfang
+ruv_logo_img = load_ruv_logo()
+page_icon = ruv_logo_img if ruv_logo_img else "🛡️" # Fallback für den Browser-Tab
+
+st.set_page_config(page_title="R+V Profi-Berater", page_icon=page_icon, layout="wide")
 
 # --- DESIGN (CSS) ---
 st.markdown("""
 <style>
     .stChatMessage p { font-size: 1.2rem !important; line-height: 1.6 !important; }
     .stChatMessage { border: 1px solid #e0e0e0; border-radius: 10px; padding: 10px; margin-bottom: 10px; }
-    /* Metriken hervorheben */
     div[data-testid="stMetricValue"] { font-size: 1.8rem !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -45,7 +52,6 @@ def ermittle_foerderung(brutto, steuerklasse, kinder, status):
     return potenziale
 
 def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
-    # Rente
     jahre = rentenalter - alter
     gesetzl_rente = brutto * 0.48 
     kaufkraft = (1 + (inflation/100)) ** jahre
@@ -53,7 +59,6 @@ def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
     rente_luecke = max(0, wunsch_rente - gesetzl_rente)
     
     # BU (Berufsunfähigkeit)
-    # Annahme: Volle Erwerbsminderungsrente ist ca. 34% vom Brutto. Der Rest zum Netto fehlt.
     em_rente = brutto * 0.34
     bu_luecke = max(0, netto_hh - em_rente)
     
@@ -61,7 +66,12 @@ def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.image(ruv_icon, width=60)
+    # SICHERHEITS-CHECK: Nur anzeigen, wenn Bild wirklich da ist
+    if ruv_logo_img:
+        st.image(ruv_logo_img, width=60)
+    else:
+        st.header("🦁 R+V") # Text-Alternative falls Bild fehlt
+        
     st.header("Kundenprofil")
     status = st.selectbox("Familienstand", ["Ledig", "Verheiratet", "Verwitwet"])
     steuerklasse = st.selectbox("Steuerklasse", [1, 2, 3, 4, 5, 6], index=2 if status=="Verheiratet" else 0)
@@ -83,16 +93,19 @@ foerder_str = "\n- ".join(foerder_liste)
 # --- DASHBOARD HEADER ---
 c1, c2 = st.columns([1, 6])
 with c1:
-    st.image(ruv_icon, width=90)
+    if ruv_logo_img:
+        st.image(ruv_logo_img, width=90)
+    else:
+        st.title("🦁")
 with c2:
     st.title("Profi-Bedarfsanalyse")
     st.caption(f"Status: {status} | Steuerklasse {steuerklasse} | {kinder} Kinder")
 
-# --- DIE 4 KACHELN (Jetzt inkl. BU) ---
+# --- DIE 4 KACHELN ---
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Dein Netto (mtl.)", f"{netto_hh:.0f} €", help="Geschätztes Haushaltsnetto inkl. Kindergeld")
 col2.metric("Rentenlücke", f"{rente_luecke:.0f} €", delta="- Handlungsbedarf", delta_color="inverse")
-col3.metric("BU-Lücke", f"{bu_luecke:.0f} €", delta="- Existenzbedrohend", delta_color="inverse", help="Fehlbetrag bei Erwerbsminderung (Differenz zu Staat)")
+col3.metric("BU-Lücke", f"{bu_luecke:.0f} €", delta="- Existenzbedrohend", delta_color="inverse", help="Fehlbetrag bei Erwerbsminderung")
 col4.metric("Förder-Chancen", f"{len(foerder_liste)}", delta="Staatl. Zuschüsse", delta_color="normal")
 
 st.divider()
@@ -118,9 +131,8 @@ Deine Aufgabe:
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    # Begrüßung passt sich dynamisch an die größte Gefahr an
     if bu_luecke > 1000:
-        intro_text = f"### 👋 Hallo!\nIch bin Günther. Ich habe deine Daten geprüft.\n\nEhrlich gesagt: Die **BU-Lücke von {bu_luecke:.0f} €** macht mir Sorgen. Wenn deine Arbeitskraft wegfällt, fehlt dieses Geld jeden Monat. Lass uns zuerst darüber sprechen, wie wir das absichern, bevor wir zur Rente kommen, okay?"
+        intro_text = f"### 👋 Hallo!\nIch bin Günther. Ich habe deine Daten geprüft.\n\nEhrlich gesagt: Die **BU-Lücke von {bu_luecke:.0f} €** macht mir Sorgen. Das ist das Geld, das fehlt, wenn du krankheitsbedingt ausfällst. Lass uns das zuerst absichern (R+V BU), bevor wir über die Rente sprechen."
     else:
         intro_text = f"### 👋 Hallo!\nIch bin Günther. Dein Netto sieht gut aus ({netto_hh:.0f} €). Bei der Rente fehlen uns später ca. **{rente_luecke:.0f} €**. Wollen wir uns ansehen, wie wir das mit staatlicher Förderung schließen?"
         
