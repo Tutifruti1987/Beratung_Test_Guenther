@@ -1,27 +1,30 @@
 import streamlit as st
 import google.generativeai as genai
-import base64
+import requests
 from PIL import Image
 from io import BytesIO
 
-# --- R+V LOGO (Base64 codiert - fest eingebaut) ---
-def load_ruv_logo():
-    # Der Bild-Code, den du geschickt hast
-    b64_data = "iVBORw0KGgoAAAANSUhEUgAAARIAAAC4CAMAAAAYGZMtAAAAk1BMVEX///8AGVdxdpEABVEAAEx1e5YAA1EAAEQAAEmus8MAAE8ACFEAE1S2usnV2OGIjaQsOWtmbo7x8vYAIV8ADlMAE1UAAEf5+vxVX4Pf4eiiprfGytUAHFoAEFTDx9NbZIcAAD2Ah6CboLVNV34cLGMRJV89SHMyP22SmK4AAFMaK2JkbI0/S3Xo6e0OIVwlMmUAADUjA5NpAAAEt0lEQVR4nO3cfVuqMBgGcNAZhMvSVFLT0lKzMs/3/3Snuk7J2MNeUXad6/79GYju1meMMYoiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwNm1pdJarWe5y5FlfOlZ/RuzXk/dr9a88m+Wjxdpqu4yl6ZPDR7wcS8dKqMM8Z9J+2dq7XR46F7GBYXp7aXvkSyYdhhGRLOXd4rRXR9NcmUUSxzzdTOyObBbJLJXfi73U1Dg3ppF8/lKyhdWRjSLJDyP5jba1tc6JeSQxT6yKxygSqmxYo2VjFUkcJza/E5NIAiwby0g425sf2SSSNZf2abpsLCOJhxvx1b3d7dHwWthmEEknk9+CWfbi9bOLJE7F7qQ35kfMNpJZQrzB6uRN1rGMZPQqvLpX7Asy20juibIp/QybYBlJnAo9rFckVNmkjZeNfSTdt+KrfSKZjYlEpudos4ZtJPy1eA3oEUm+JgZp7+dptJptJHFaPA97REKWjcU5/nSoSEbz+bzNmNz5fX/s4gW+eyTUIC2IsiEjGeefBpPpLTHYLvUHzpHkH3LZdIMoGzKS5Gfbkvgma4qEHKQFUTbqSKIV9euuo3AW4ZaNJpLooSt/8hq615wYpHWfTt9YM+pIJlKz+EcNJ+GWXDZ8F0jZ6CKJNvPSxuFd8dVukZBlYz2ReTKaSKRukAkf3SmSfC6XTVtIulmaSF5KkfB74dUTRSRXVZHkqbIZnLylxix/JfzQ6hfcDYvbtsVN/fdyzf2LZEFNCYRTNvZ9Ce8WDRXb5ES+I8l52GVjf8bx8hUJcbaJWUBl4zAu8YxkQUwJjJu83SmzHr36RUIN0rKHBttPUEVyXXMiMVsQ1zZ8GFTZVEcy2E8P9XYkn4Zv1CRJWGVTHckmYfLlu38m8p+yftMRlFVFQow9T4LfB1Y21ZHkF/SkWt1Su3vv51DZvS6Jsq9feGWjiGRCjLtrx2OnNV+nVX0SJq5RvhohUm00iMRqKcK5VEdyRY1KXrc3RQeh3Wth27M+k6zTbONpiqHaTm7DqLxywG6+pITfB1g2ykiuqXGVuELIL5KEWvPZPEUkE+IKrS2eIbwiCbNs1Nc4T9RgUxhZ+URSmqALhyoSqoNlwpIYn0jSMMtGMzkwkk8ao+fiqz0iCbVsNJGUJ6O/v9ziUMI9ktJyppAoI9kTrRJu5LhH0uyacCX1ROMdMdFYXHLoHAlbnql9DtSRUPflii13jWR+OFPzXGhuWhBL3PnouNk1koDLRn+3j1rjfpwZdIyktEI2MJpI9sQ5Z3680HGLZH5zpsa50UQSvREd7PFn7xZJEnLZ6COhVqceR1lOkYRdNvpIohtion78c1Hf+5OMfz2KJ9aqSII+23zRRjKlOtjfZWWDInH2oyqScQBrwpW0kQyIlnGTL7oiksafQNLSRhK12sQ3bXAVS0fS/BNIWvpIekQHKz5cQKMjaf4JJC19JNGW6GBT/T06MpLwy8YoEqqDzfRNoyIJ4QkkLeIB+8fSLnlyIT8Cr58lJB6wz0J4AkmL+DcMUj+xIv47Q187AiX+DUMrpFV6AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/v7+muk9lwXYY2AAAAABJRU5ErkJggg=="
+# --- KONFIGURATION (Löwe als Icon = Absturzsicher) ---
+st.set_page_config(page_title="R+V Profi-Berater", page_icon="🦁", layout="wide")
+
+# --- FUNKTION: R+V LOGO LADEN (Ausfallsicher) ---
+def get_logo():
+    # Wir versuchen, das Logo von einer stabilen Quelle zu laden
+    url = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/R%2BV-Logo.svg/512px-R%2BV-Logo.svg.png"
     try:
-        image_data = base64.b64decode(b64_data)
-        return Image.open(BytesIO(image_data))
+        # User-Agent Header verhindert Blockierung
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        response = requests.get(url, headers=headers, timeout=3)
+        if response.status_code == 200:
+            return Image.open(BytesIO(response.content))
     except:
-        return None
+        pass
+    return None # Falls es fehlschlägt, geben wir "Nichts" zurück, damit kein Fehler kommt
 
-# --- KONFIGURATION ---
-ruv_logo_img = load_ruv_logo()
-# Wenn Bild da ist, nutze es, sonst ein Schild-Emoji als Fallback
-page_icon = ruv_logo_img if ruv_logo_img else "🛡️"
+# Logo einmal laden
+logo_img = get_logo()
 
-st.set_page_config(page_title="R+V Profi-Berater", page_icon=page_icon, layout="wide")
-
-# --- DESIGN (CSS) - SCHRIFT GRÖSSER ---
+# --- DESIGN (CSS) ---
 st.markdown("""
 <style>
     .stChatMessage p { font-size: 1.2rem !important; line-height: 1.6 !important; }
@@ -47,7 +50,6 @@ def ermittle_foerderung(brutto, steuerklasse, kinder, status):
     return potenziale
 
 def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
-    # Rente
     jahre = rentenalter - alter
     gesetzl_rente = brutto * 0.48 
     kaufkraft = (1 + (inflation/100)) ** jahre
@@ -55,6 +57,7 @@ def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
     rente_luecke = max(0, wunsch_rente - gesetzl_rente)
     
     # BU (Berufsunfähigkeit)
+    # Annahme: Staat zahlt max ca. 34% vom Brutto als volle EM-Rente
     em_rente = brutto * 0.34
     bu_luecke = max(0, netto_hh - em_rente)
     
@@ -62,10 +65,10 @@ def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
 
 # --- SIDEBAR ---
 with st.sidebar:
-    if ruv_logo_img:
-        st.image(ruv_logo_img, width=60)
+    if logo_img:
+        st.image(logo_img, width=60)
     else:
-        st.header("🦁 R+V")
+        st.header("🦁 R+V") # Text-Alternative falls Internet hakt
         
     st.header("Kundenprofil")
     status = st.selectbox("Familienstand", ["Ledig", "Verheiratet", "Verwitwet"])
@@ -88,8 +91,8 @@ foerder_str = "\n- ".join(foerder_liste)
 # --- DASHBOARD HEADER ---
 c1, c2 = st.columns([1, 6])
 with c1:
-    if ruv_logo_img:
-        st.image(ruv_logo_img, width=90)
+    if logo_img:
+        st.image(logo_img, width=100)
     else:
         st.title("🦁")
 with c2:
@@ -129,7 +132,7 @@ if "messages" not in st.session_state:
     
     # Dynamischer Start je nach Risiko
     if bu_luecke > 1000:
-        intro_text = f"### 👋 Hallo!\nIch bin Günther. Ich habe deine Daten geprüft.\n\nEhrlich gesagt: Die **BU-Lücke von {bu_luecke:.0f} €** macht mir Sorgen. Wenn du wegen Krankheit ausfällst, fehlt dieses Geld. Lass uns zuerst die **R+V BerufsunfähigkeitsPolice** ansehen, bevor wir zur Rente kommen, okay?"
+        intro_text = f"### 👋 Hallo!\nIch bin Günther. Ich habe deine Daten geprüft.\n\nEhrlich gesagt: Die **BU-Lücke von {bu_luecke:.0f} €** macht mir Sorgen. Das ist das Geld, das fehlt, wenn du krankheitsbedingt ausfällst. Lass uns zuerst die **R+V BerufsunfähigkeitsPolice** ansehen, bevor wir zur Rente kommen, okay?"
     else:
         intro_text = f"### 👋 Hallo!\nIch bin Günther. Dein Netto sieht gut aus ({netto_hh:.0f} €). Bei der Rente fehlen uns später ca. **{rente_luecke:.0f} €**. Wollen wir uns ansehen, wie wir das mit staatlicher Förderung schließen?"
         
