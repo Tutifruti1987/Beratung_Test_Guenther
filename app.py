@@ -5,7 +5,7 @@ from PIL import Image
 from io import BytesIO
 import time
 
-# --- KONFIGURATION (Löwe als Icon) ---
+# --- KONFIGURATION ---
 st.set_page_config(page_title="R+V Profi-Berater", page_icon="🦁", layout="wide")
 
 # --- FUNKTION: R+V LOGO LADEN ---
@@ -28,7 +28,6 @@ st.markdown("""
     .stChatMessage p { font-size: 1.2rem !important; line-height: 1.6 !important; }
     .stChatMessage { border: 1px solid #e0e0e0; border-radius: 10px; padding: 10px; margin-bottom: 10px; }
     div[data-testid="stMetricValue"] { font-size: 1.8rem !important; }
-    /* Warnung stylen */
     .stAlert { font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
@@ -58,11 +57,9 @@ def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
     kaufkraft = (1 + (inflation/100)) ** jahre
     wunsch_rente = netto_hh * 0.85 * kaufkraft
     rente_luecke = max(0, wunsch_rente - gesetzl_rente)
-    
-    # BU (Berufsunfähigkeit)
+    # BU
     em_rente = brutto * 0.34
     bu_luecke = max(0, netto_hh - em_rente)
-    
     return rente_luecke, bu_luecke
 
 # --- SIDEBAR ---
@@ -78,8 +75,8 @@ with st.sidebar:
     kinder = st.number_input("Kinder", 0, 8, 0)
     alter = st.number_input("Alter", 18, 67, 35)
     
-    # ÄNDERUNG: Startwert ist 0, Hinweis im Label und Help
-    brutto = st.number_input("Brutto (Monat) *", min_value=0, max_value=20000, value=0, help="Bitte hier dein Bruttogehalt eingeben, um die Analyse zu starten.")
+    # Startwert 0
+    brutto = st.number_input("Brutto (Monat) *", min_value=0, max_value=20000, value=0, help="Bitte hier dein Bruttogehalt eingeben.")
     
     st.divider()
     if st.button("Neustart"):
@@ -87,7 +84,6 @@ with st.sidebar:
         st.rerun()
 
 # --- HAUPTBEREICH ---
-# HEADER
 c1, c2 = st.columns([1, 6])
 with c1:
     if logo_img:
@@ -98,17 +94,15 @@ with c2:
     st.title("Profi-Bedarfsanalyse")
     st.caption(f"Status: {status} | Steuerklasse {steuerklasse} | {kinder} Kinder")
 
-# LOGIK: WENN BRUTTO 0 IST, ZEIGE WARNUNG
+# LOGIK: WENN BRUTTO 0
 if brutto == 0:
-    st.warning("⚠️ Bitte gib zuerst dein Brutto-Einkommen in der Seitenleiste (links) ein, um die Analyse zu sehen.")
-    # Wir setzen Platzhalter-Werte für die Anzeige, damit es nicht abstürzt
+    st.warning("⚠️ Bitte gib zuerst dein Brutto-Einkommen in der Seitenleiste (links) ein.")
     netto_hh = 0
     rente_luecke = 0
     bu_luecke = 0
     foerder_liste = []
     foerder_str = ""
 else:
-    # ECHTE BERECHNUNG
     netto, netto_hh = berechne_netto_genauer(brutto, steuerklasse, kinder)
     rente_luecke, bu_luecke = berechne_alle_luecken(brutto, netto_hh, alter, 67, 2.0)
     foerder_liste = ermittle_foerderung(brutto, steuerklasse, kinder, status)
@@ -127,7 +121,6 @@ st.divider()
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# System-Prompt kennt die Daten, weiß aber, dass er höflich warten soll
 system_prompt = f"""
 Du bist Günther, R+V Experte.
 Kunde: {alter}J, {status}, {kinder} Kinder. Brutto {brutto}.
@@ -136,18 +129,15 @@ Lücken (nur relevant wenn Brutto > 0):
 - BU-LÜCKE: {bu_luecke:.0f} €
 
 Regeln:
-1. Wenn der Kunde noch kein Brutto eingegeben hat (Brutto=0), bitte ihn freundlich darum.
-2. Wenn Brutto da ist: Analysiere die Lücken erst, wenn der Kunde im Chat das "Go" gibt oder "Ja" sagt.
+1. Wenn Brutto=0, bitte höflich um Eingabe.
+2. Wenn Brutto da ist: Analysiere erst nach "Go" des Kunden.
 3. Sei empathisch, nutze das "Du".
-4. Empfiehl R+V Produkte passend zur Lücke (BU-Police, PrivatRente, etc.).
+4. Empfiehl R+V Produkte.
 """
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    
-    # ÄNDERUNG: Immer nette Begrüßung, keine sofortige Analyse
     intro_text = f"### 👋 Hallo!\nIch bin Günther, dein persönlicher R+V Berater.\n\nSoll ich deine Daten analysieren und wir steigen gemeinsam in die Versicherungsberatung ein?"
-        
     st.session_state.messages.append({"role": "assistant", "content": intro_text})
 
 for m in st.session_state.messages:
@@ -159,8 +149,9 @@ if prompt := st.chat_input("Antworte Günther (z.B. 'Ja, gerne')..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        # Wir nutzen 'gemini-1.5-flash'
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # HIER IST DER FIX: Wir nutzen das klassische 'gemini-pro'.
+        # Das funktioniert mit jeder Version der Bibliothek.
+        model = genai.GenerativeModel('gemini-pro')
         
         history = [{"role": "user", "parts": [system_prompt]}]
         for m in st.session_state.messages:
@@ -174,6 +165,6 @@ if prompt := st.chat_input("Antworte Günther (z.B. 'Ja, gerne')..."):
             
     except Exception as e:
         if "429" in str(e):
-            st.warning("⚠️ Kurz warten (Limit erreicht)...")
+            st.warning("⚠️ Zu viele Anfragen. Bitte 30 Sek warten.")
         else:
             st.error(f"Fehler: {e}")
