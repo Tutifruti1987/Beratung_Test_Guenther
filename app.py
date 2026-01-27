@@ -1,5 +1,4 @@
 import streamlit as st
-import matplotlib.pyplot as plt # Neu für die Grafik
 import google.generativeai as genai
 import requests
 from PIL import Image
@@ -9,7 +8,7 @@ import time
 # --- SETUP & KONFIGURATION ---
 st.set_page_config(page_title="R+V Berater Günther", page_icon="🦁", layout="wide")
 
-# --- FUNKTION: R+V LOGO (Stabil via URL) ---
+# --- FUNKTION: R+V LOGO ---
 def get_logo():
     url = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/R%2BV-Logo.svg/512px-R%2BV-Logo.svg.png"
     try:
@@ -23,7 +22,7 @@ def get_logo():
 
 logo_img = get_logo()
 
-# --- DESIGN (CSS für professionelles Look & Feel) ---
+# --- DESIGN (CSS) ---
 st.markdown("""
 <style>
     .stChatMessage p { font-size: 1.15rem !important; line-height: 1.6 !important; }
@@ -33,32 +32,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- MATHEMATIK-LOGIK (Vorsorge-Rechner) ---
+# --- MATHEMATIK-LOGIK ---
 def berechne_analyse(brutto, steuerklasse, kinder, alter):
     if brutto <= 0: return 0, 0, 0, 0
-    
-    # Netto-Schätzung
     st_faktor = {1: 0.39, 2: 0.36, 3: 0.30, 4: 0.39, 5: 0.52, 6: 0.60}
     netto_basis = brutto * (1 - (st_faktor.get(steuerklasse, 0.40) - (kinder * 0.012)))
-    netto_hh = netto_basis + (kinder * 250) # Inkl. Kindergeld
-    
-    # Rentenlücke (Ziel: 85% vom Netto, 2% Inflation)
+    netto_hh = netto_basis + (kinder * 250)
     jahre_bis_rente = 67 - alter
     ziel_rente = netto_hh * 0.85 * (1.02 ** jahre_bis_rente)
-    r_luecke = max(0, ziel_rente - (brutto * 0.48)) # Annahme: 48% Rentenniveau vom Brutto
-    
-    # BU-Lücke (Absicherung des aktuellen Netto vs. Erwerbsminderungsrente)
-    b_luecke = max(0, netto_hh - (brutto * 0.34)) # Annahme: 34% EM-Rente vom Brutto
-    
-    # Förderwege zählen
+    r_luecke = max(0, ziel_rente - (brutto * 0.48))
+    b_luecke = max(0, netto_hh - (brutto * 0.34))
     f_anzahl = 0
-    if steuerklasse != 6: f_anzahl += 1 # bAV
-    if kinder > 0: f_anzahl += 1 # Riester
-    if brutto > 5000: f_anzahl += 1 # Rürup
-    
+    if steuerklasse != 6: f_anzahl += 1
+    if kinder > 0: f_anzahl += 1
+    if brutto > 5000: f_anzahl += 1
     return netto_hh, r_luecke, b_luecke, f_anzahl
 
-# --- SIDEBAR (Dateneingabe) ---
+# --- SIDEBAR ---
 with st.sidebar:
     if logo_img:
         st.image(logo_img, width=80)
@@ -68,40 +58,15 @@ with st.sidebar:
     kinder = st.number_input("Anzahl Kinder", 0, 10, 0)
     alter = st.number_input("Alter", 18, 67, 35)
     brutto = st.number_input("Bruttogehalt (mtl.) in € *", 0, 25000, 0, step=100)
-    
     st.divider()
     if st.button("Beratung zurücksetzen"):
         st.session_state.messages = []
         st.rerun()
 
-# --- BERECHNUNG DER WERTE ---
+# --- WERTE BERECHNEN ---
 n_hh, r_luecke, b_luecke, f_anzahl = berechne_analyse(brutto, st_klasse, kinder, alter)
 
-# --- NEUE FUNKTION: GRAFIK ERZEUGEN ---
-def erzeuge_luecken_chart(n_hh, r_luecke, b_luecke):
-    fig, ax = plt.subplots(figsize=(8, 4))
-    kategorien = ['Netto heute', 'Ziel-Rente', 'EM-Rente (Staat)']
-    werte = [n_hh, n_hh * 0.85, n_hh * 0.34] # Vergleichswerte
-    farben = ['#003366', '#ffcc00', '#cc0000'] # R+V Farben (Blau, Gelb, Rot)
-
-    ax.bar(kategorien, werte, color=farben)
-    ax.set_ylabel('Betrag in €')
-    ax.set_title('Deine monatliche Absicherung im Vergleich')
-    
-    # Werte an die Balken schreiben
-    for i, v in enumerate(werte):
-        ax.text(i, v + 50, f"{v:.0f}€", ha='center', fontweight='bold')
-    
-    st.pyplot(fig)
-
-# --- IM HAUPTBEREICH (unter den Kacheln einbauen) ---
-if brutto > 0:
-    st.write("### 📊 Deine Vorsorgesituation auf einen Blick")
-    erzeuge_luecken_chart(n_hh, r_luecke, b_luecke)
-    st.caption("Die Grafik zeigt dein aktuelles Netto im Vergleich zur benötigten Rente und zur staatlichen Basis-Absicherung bei Berufsunfähigkeit.")
-
-
-# --- DASHBOARD HEADER ---
+# --- HEADER & DASHBOARD ---
 c1, c2 = st.columns([1, 4])
 with c1: 
     if logo_img: st.image(logo_img, width=120)
@@ -112,7 +77,6 @@ with c2:
 if brutto == 0:
     st.warning("👈 Bitte geben Sie links Ihr monatliches Bruttogehalt ein, um die Analyse zu starten.")
 
-# Metriken (Kacheln)
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Netto-Haushalt", f"{n_hh:.0f} €")
 col2.metric("Rentenlücke", f"{r_luecke:.0f} €", delta="Bedarf" if brutto > 0 else None, delta_color="inverse")
@@ -125,7 +89,6 @@ st.divider()
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# Dynamischer System-Prompt
 if brutto > 0:
     daten_kontext = f"""
     AKTUELLE DATEN:
@@ -151,7 +114,6 @@ AUFTRAG:
 3. Erklären Sie kurz, dass Existenzschutz (BU) Vorrang vor Altersvorsorge hat.
 """
 
-# Chat-Historie Initialisierung
 if "messages" not in st.session_state:
     st.session_state.messages = []
     st.session_state.messages.append({
@@ -159,21 +121,16 @@ if "messages" not in st.session_state:
         "content": "Guten Tag! Ich bin Günther. Gerne unterstütze ich Sie bei Ihrer Vorsorgeplanung. Sollen wir direkt in die Analyse Ihrer aktuellen Daten einsteigen?"
     })
 
-# Chat anzeigen
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
-# --- CHAT Eingabe ---
 if prompt := st.chat_input("Ihre Frage an Günther..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        # Wir nutzen jetzt das Modell, das in deiner Diagnose-Liste definitiv vorhanden war
         model = genai.GenerativeModel('gemini-2.0-flash')
-        
-        # Verlauf mit System-Anweisung
         history = [{"role": "user", "parts": [system_prompt]}]
         for m in st.session_state.messages[-6:]:
             role = "user" if m["role"] == "user" else "model"
@@ -182,18 +139,14 @@ if prompt := st.chat_input("Ihre Frage an Günther..."):
         with st.spinner("Analyse wird erstellt..."):
             for i in range(3):
                 try:
-                    # Der Standardaufruf (nutzt automatisch die stabilste API-Version)
                     response = model.generate_content(history)
                     st.chat_message("assistant").markdown(response.text)
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                     break
                 except Exception as e:
                     if "429" in str(e) and i < 2:
-                        time.sleep(5)
+                        time.sleep(4)
                         continue
-                    else:
-                        raise e
-                        
+                    else: raise e
     except Exception as e:
-        # Detaillierte Fehlermeldung für uns zur Diagnose
-        st.error(f"Hinweis: {e}")
+        st.error(f"Ein technischer Fehler ist aufgetreten: {e}")
