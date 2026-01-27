@@ -149,21 +149,23 @@ if prompt := st.chat_input("Antworte Günther (z.B. 'Ja, gerne')..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        # HIER IST DIE LÖSUNG: Wir nehmen das Modell, das bei dir grün war!
         model = genai.GenerativeModel('models/gemini-2.0-flash')
         
+        # Wir schicken nur die letzten Nachrichten, um Tokens zu sparen
         history = [{"role": "user", "parts": [system_prompt]}]
-        for m in st.session_state.messages:
+        for m in st.session_state.messages[-5:]: # Nur die letzten 5 Nachrichten
             r = "user" if m["role"] == "user" else "model"
             history.append({"role": r, "parts": [m["content"]]})
             
-        with st.spinner("Günther denkt nach..."):
+        with st.spinner("Günther überlegt kurz..."):
+            # Ein kleiner technischer Trick: Wir warten 1 Sekunde vor dem Senden
+            time.sleep(1) 
             response = model.generate_content(history)
             st.chat_message("assistant").markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             
     except Exception as e:
         if "429" in str(e):
-            st.warning("⚠️ Zu viele Anfragen. Bitte 30 Sek warten.")
+            st.warning("⚠️ Google sagt: 'Zu schnell!'. Bitte warte kurz 30-60 Sekunden und probiere es dann nochmal.")
         else:
             st.error(f"Fehler: {e}")
