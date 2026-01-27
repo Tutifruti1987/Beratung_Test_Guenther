@@ -139,39 +139,36 @@ for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
-# Chat Eingabe
+# --- CHAT Eingabe ---
 if prompt := st.chat_input("Ihre Frage an Günther..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        # Stabilstes Modell für professionelle Beratung
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        # Wir nutzen jetzt das Modell, das in deiner Diagnose-Liste definitiv vorhanden war
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
         # Verlauf mit System-Anweisung
         history = [{"role": "user", "parts": [system_prompt]}]
-        # Nur die letzten 6 Nachrichten für bessere Stabilität
         for m in st.session_state.messages[-6:]:
             role = "user" if m["role"] == "user" else "model"
             history.append({"role": role, "parts": [m["content"]]})
             
         with st.spinner("Analyse wird erstellt..."):
-            # Retry-Logik bei Server-Überlastung
             for i in range(3):
                 try:
+                    # Der Standardaufruf (nutzt automatisch die stabilste API-Version)
                     response = model.generate_content(history)
                     st.chat_message("assistant").markdown(response.text)
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                     break
                 except Exception as e:
                     if "429" in str(e) and i < 2:
-                        time.sleep(4) # Pause bei 429 Fehler
+                        time.sleep(5)
                         continue
                     else:
                         raise e
                         
     except Exception as e:
-        if "429" in str(e):
-            st.error("Der Server ist aktuell ausgelastet. Bitte warten Sie 30 Sekunden und senden Sie die Nachricht erneut.")
-        else:
-            st.error(f"Ein technischer Fehler ist aufgetreten: {e}")
+        # Detaillierte Fehlermeldung für uns zur Diagnose
+        st.error(f"Hinweis: {e}")
