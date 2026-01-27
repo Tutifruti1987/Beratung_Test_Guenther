@@ -96,50 +96,52 @@ st.divider()
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# Der umfassende Berater-Prompt (Deine Instruktionen)
+# Günthers neues "warmes" Gehirn
 system_prompt = f"""
-Du bist Günther, ein erfahrener Versicherungsberater der R+V Versicherung.
-QUALIFIKATION: Vollumfänglich (Kranken, Vorsorge, Geldanlage, Komposit, Tier).
-STANDARDS: Du berätst nach deutschem Recht, IDD und DIN 77230.
-TONFALL: Hilfsbereit, kundenorientiert, professionell, kurze Sätze, "Du"-Form.
-REGEL: Keine Halluzinationen. Nutze reale R+V Produkte (z.B. R+V BerufsunfähigkeitsPolice, R+V PrivatRente).
+Du bist Günther. Ein Typ, mit dem man gerne ein Bier trinkt oder einen Kaffee, 
+der aber verdammt viel Ahnung von Versicherungen hat (R+V). 
 
-AKTUELLE KUNDENDATEN:
-- Alter: {alter}, Steuerklasse: {st_klasse}, Kinder: {kinder}
-- Monatliches Brutto: {brutto} €
-- Berechnetes Netto: {n_hh:.0f} €
-- Rentenlücke (inflationsbereinigt): {r_luecke:.0f} €
-- BU-Lücke (Existenzrisiko): {b_luecke:.0f} €
-- Mögliche Förderungen: {", ".join(f_wege) if f_wege else "Keine direkt ersichtlich"}
+DEIN STIL:
+- Du bist herzlich, locker und direkt. Kein Fach-Chinesisch.
+- Du nutzt das "Du" ganz natürlich.
+- Sag niemals "nach DIN 77230" oder "IDD-konform". Berate einfach danach, ohne es zu benennen.
+- Wenn die BU-Lücke groß ist, sag nicht "Existenzrisiko", sondern eher: "Mensch, wenn dir was passiert, wird's finanziell echt eng. Das müssen wir uns zuerst anschauen."
 
-AUFGABE:
-1. Wenn der Kunde noch kein Brutto (0 €) eingegeben hat, weise höflich darauf hin.
-2. Beginne das Gespräch erst richtig, wenn der Kunde zustimmt.
-3. Bereite Ergebnisse anschaulich auf (Nutze Tabellen für Lücken).
-4. Gehe auf Bedürfnisse ein und priorisiere Existenzschutz (BU) vor Altersvorsorge (DIN 77230).
+DEINE DATEN FÜR DIESEN CHAT:
+- Alter: {alter}, {kinder} Kinder, Brutto: {brutto} €
+- Netto: {n_hh:.0f} €, Rentenlücke: {r_luecke:.0f} €, BU-Lücke: {b_luecke:.0f} €
+
+DEIN AUFTRAG:
+1. Falls Brutto 0 ist: Sag charmant, dass du ohne eine Zahl im Feld links nicht wirklich rechnen kannst.
+2. Wenn Brutto da ist: Warte kurz auf ein "Go".
+3. Wenn du analysierst: Mach es anschaulich. Erklär dem Kunden, warum die BU-Lücke wichtiger ist als die Rente, als würdest du es einem guten Freund erklären.
+4. Nutze Tabellen nur, wenn es wirklich hilft, die Übersicht zu behalten.
 """
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    st.session_state.messages.append({"role": "assistant", "content": "Hallo ich bin Günther, dein persönlicher Versicherungsberater, wie kann ich dir helfen? Soll ich deine aktuelle Vorsorgesituation einmal analysieren?"})
+    # Herzlichere Begrüßung
+    st.session_state.messages.append({
+        "role": "assistant", 
+        "content": "### Moin! Ich bin Günther. 👋\n\nSchön, dass du da bist! Ich hab hier schon mal deine Eckdaten im Blick. Sollen wir mal gemeinsam drüber schauen, wo du gut aufgestellt bist und wo wir vielleicht noch mal ran müssen?"
+    })
 
 for m in st.session_state.messages:
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
-if prompt := st.chat_input("Deine Nachricht an Günther..."):
+if prompt := st.chat_input("Schreib mir einfach..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        model = genai.GenerativeModel('models/gemini-2.0-flash')
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
         history = [{"role": "user", "parts": [system_prompt]}]
         for m in st.session_state.messages:
             role = "user" if m["role"] == "user" else "model"
             history.append({"role": role, "parts": [m["content"]]})
             
-        with st.spinner("Günther erstellt deine Analyse..."):
-            # Retry-Logik gegen Fehler 429
-            for i in range(3): # 3 Versuche
+        with st.spinner("Ich schau mal kurz drüber..."):
+            for i in range(3):
                 try:
                     response = model.generate_content(history)
                     st.chat_message("assistant").markdown(response.text)
@@ -147,9 +149,8 @@ if prompt := st.chat_input("Deine Nachricht an Günther..."):
                     break
                 except Exception as e:
                     if "429" in str(e) and i < 2:
-                        time.sleep(2) # Kurz warten
+                        time.sleep(3)
                         continue
                     else: raise e
-            
     except Exception as e:
-        st.error(f"Hinweis: Der Server ist gerade stark ausgelastet ({e}). Bitte sende deine Nachricht in 10 Sekunden nochmal.")
+        st.error(f"Sorry, mein System hakt kurz. Probier's bitte in 10 Sekunden noch mal! ({e})")
