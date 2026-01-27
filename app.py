@@ -19,7 +19,7 @@ def get_logo():
             return Image.open(BytesIO(response.content))
     except:
         pass
-    return None # Falls es fehlschlägt, geben wir "Nichts" zurück, damit kein Fehler kommt
+    return None # Falls es fehlschlägt, geben wir "Nichts" zurück
 
 # Logo einmal laden
 logo_img = get_logo()
@@ -147,7 +147,8 @@ if prompt := st.chat_input("Deine Frage an Günther..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # HIER IST DIE ÄNDERUNG: 'gemini-pro' statt 'gemini-1.5-flash'
+        model = genai.GenerativeModel('gemini-pro')
         history = [{"role": "user", "parts": [system_prompt]}]
         for m in st.session_state.messages:
             r = "user" if m["role"] == "user" else "model"
@@ -158,4 +159,4 @@ if prompt := st.chat_input("Deine Frage an Günther..."):
             st.chat_message("assistant").markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
     except Exception as e:
-        st.error(e)
+        st.error(f"Ein Fehler ist aufgetreten: {e}")
