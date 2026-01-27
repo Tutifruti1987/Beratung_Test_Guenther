@@ -9,19 +9,16 @@ st.set_page_config(page_title="R+V Profi-Berater", page_icon="🦁", layout="wid
 
 # --- FUNKTION: R+V LOGO LADEN (Ausfallsicher) ---
 def get_logo():
-    # Wir versuchen, das Logo von einer stabilen Quelle zu laden
     url = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/R%2BV-Logo.svg/512px-R%2BV-Logo.svg.png"
     try:
-        # User-Agent Header verhindert Blockierung
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         response = requests.get(url, headers=headers, timeout=3)
         if response.status_code == 200:
             return Image.open(BytesIO(response.content))
     except:
         pass
-    return None # Falls es fehlschlägt, geben wir "Nichts" zurück
+    return None 
 
-# Logo einmal laden
 logo_img = get_logo()
 
 # --- DESIGN (CSS) ---
@@ -57,7 +54,6 @@ def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
     rente_luecke = max(0, wunsch_rente - gesetzl_rente)
     
     # BU (Berufsunfähigkeit)
-    # Annahme: Staat zahlt max ca. 34% vom Brutto als volle EM-Rente
     em_rente = brutto * 0.34
     bu_luecke = max(0, netto_hh - em_rente)
     
@@ -68,7 +64,7 @@ with st.sidebar:
     if logo_img:
         st.image(logo_img, width=60)
     else:
-        st.header("🦁 R+V") # Text-Alternative falls Internet hakt
+        st.header("🦁 R+V") 
         
     st.header("Kundenprofil")
     status = st.selectbox("Familienstand", ["Ledig", "Verheiratet", "Verwitwet"])
@@ -129,8 +125,6 @@ Deine Aufgabe:
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    
-    # Dynamischer Start je nach Risiko
     if bu_luecke > 1000:
         intro_text = f"### 👋 Hallo!\nIch bin Günther. Ich habe deine Daten geprüft.\n\nEhrlich gesagt: Die **BU-Lücke von {bu_luecke:.0f} €** macht mir Sorgen. Das ist das Geld, das fehlt, wenn du krankheitsbedingt ausfällst. Lass uns zuerst die **R+V BerufsunfähigkeitsPolice** ansehen, bevor wir zur Rente kommen, okay?"
     else:
@@ -142,13 +136,39 @@ for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
+# --- NEU: INTELLIGENTE MODELL-SUCHE ---
+def finde_bestes_modell():
+    # Wir fragen die API, welche Modelle verfügbar sind
+    try:
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name)
+        
+        # Wir bevorzugen 'flash' (schnell), dann 'pro'
+        for m in available_models:
+            if "flash" in m and "1.5" in m: return m
+        for m in available_models:
+            if "pro" in m and "1.5" in m: return m
+        for m in available_models:
+            if "pro" in m: return m
+            
+        # Wenn nichts passt, nehmen wir das erste verfügbare
+        return available_models[0] if available_models else None
+    except:
+        # Fallback, falls das Listen fehlschlägt
+        return "models/gemini-1.5-flash"
+
 if prompt := st.chat_input("Deine Frage an Günther..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        # HIER IST DIE ÄNDERUNG: 'gemini-pro' statt 'gemini-1.5-flash'
-        model = genai.GenerativeModel('gemini-pro')
+        # Modell dynamisch finden
+        modell_name = finde_bestes_modell()
+        # st.caption(f"Debug: Nutze Modell {modell_name}") # Kannst du einkommentieren zum Testen
+        
+        model = genai.GenerativeModel(modell_name)
         history = [{"role": "user", "parts": [system_prompt]}]
         for m in st.session_state.messages:
             r = "user" if m["role"] == "user" else "model"
@@ -159,4 +179,4 @@ if prompt := st.chat_input("Deine Frage an Günther..."):
             st.chat_message("assistant").markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
     except Exception as e:
-        st.error(f"Ein Fehler ist aufgetreten: {e}")
+        st.error(f"Fehler: {e}. Bitte prüfe den API Key.")
