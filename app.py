@@ -3,16 +3,17 @@ import google.generativeai as genai
 import requests
 from PIL import Image
 from io import BytesIO
+import time
 
-# --- KONFIGURATION (Löwe als Icon = Absturzsicher) ---
+# --- KONFIGURATION (Löwe als Icon) ---
 st.set_page_config(page_title="R+V Profi-Berater", page_icon="🦁", layout="wide")
 
-# --- FUNKTION: R+V LOGO LADEN (Ausfallsicher) ---
+# --- FUNKTION: R+V LOGO LADEN ---
 def get_logo():
     url = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/R%2BV-Logo.svg/512px-R%2BV-Logo.svg.png"
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        response = requests.get(url, headers=headers, timeout=3)
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=2)
         if response.status_code == 200:
             return Image.open(BytesIO(response.content))
     except:
@@ -27,11 +28,14 @@ st.markdown("""
     .stChatMessage p { font-size: 1.2rem !important; line-height: 1.6 !important; }
     .stChatMessage { border: 1px solid #e0e0e0; border-radius: 10px; padding: 10px; margin-bottom: 10px; }
     div[data-testid="stMetricValue"] { font-size: 1.8rem !important; }
+    /* Warnung stylen */
+    .stAlert { font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- MATHEMATIK ---
 def berechne_netto_genauer(brutto, steuerklasse, kinder):
+    if brutto == 0: return 0, 0
     faktoren = {1: 0.39, 2: 0.36, 3: 0.30, 4: 0.39, 5: 0.52, 6: 0.60}
     abzug_quote = faktoren.get(steuerklasse, 0.40) - (kinder * 0.01)
     if abzug_quote < 0.2: abzug_quote = 0.2
@@ -40,6 +44,7 @@ def berechne_netto_genauer(brutto, steuerklasse, kinder):
 
 def ermittle_foerderung(brutto, steuerklasse, kinder, status):
     potenziale = []
+    if brutto == 0: return []
     if steuerklasse != 6: potenziale.append("bAV (Direktversicherung) - Sozialabgaben sparen")
     if kinder > 0: potenziale.append(f"Riester-Rente - {kinder}x Kinderzulage sichern")
     elif brutto < 2500: potenziale.append("Riester-Rente - Förderquote prüfen")
@@ -47,6 +52,7 @@ def ermittle_foerderung(brutto, steuerklasse, kinder, status):
     return potenziale
 
 def berechne_alle_luecken(brutto, netto_hh, alter, rentenalter, inflation):
+    if brutto == 0: return 0, 0
     jahre = rentenalter - alter
     gesetzl_rente = brutto * 0.48 
     kaufkraft = (1 + (inflation/100)) ** jahre
@@ -71,20 +77,17 @@ with st.sidebar:
     steuerklasse = st.selectbox("Steuerklasse", [1, 2, 3, 4, 5, 6], index=2 if status=="Verheiratet" else 0)
     kinder = st.number_input("Kinder", 0, 8, 0)
     alter = st.number_input("Alter", 18, 67, 35)
-    brutto = st.number_input("Brutto", 520, 20000, 4500)
+    
+    # ÄNDERUNG: Startwert ist 0, Hinweis im Label und Help
+    brutto = st.number_input("Brutto (Monat) *", min_value=0, max_value=20000, value=0, help="Bitte hier dein Bruttogehalt eingeben, um die Analyse zu starten.")
     
     st.divider()
-    if st.button("Reset"):
+    if st.button("Neustart"):
         st.session_state.messages = []
         st.rerun()
 
-# --- BERECHNUNG ---
-netto, netto_hh = berechne_netto_genauer(brutto, steuerklasse, kinder)
-rente_luecke, bu_luecke = berechne_alle_luecken(brutto, netto_hh, alter, 67, 2.0)
-foerder_liste = ermittle_foerderung(brutto, steuerklasse, kinder, status)
-foerder_str = "\n- ".join(foerder_liste)
-
-# --- DASHBOARD HEADER ---
+# --- HAUPTBEREICH ---
+# HEADER
 c1, c2 = st.columns([1, 6])
 with c1:
     if logo_img:
@@ -95,12 +98,28 @@ with c2:
     st.title("Profi-Bedarfsanalyse")
     st.caption(f"Status: {status} | Steuerklasse {steuerklasse} | {kinder} Kinder")
 
-# --- DIE 4 KACHELN ---
+# LOGIK: WENN BRUTTO 0 IST, ZEIGE WARNUNG
+if brutto == 0:
+    st.warning("⚠️ Bitte gib zuerst dein Brutto-Einkommen in der Seitenleiste (links) ein, um die Analyse zu sehen.")
+    # Wir setzen Platzhalter-Werte für die Anzeige, damit es nicht abstürzt
+    netto_hh = 0
+    rente_luecke = 0
+    bu_luecke = 0
+    foerder_liste = []
+    foerder_str = ""
+else:
+    # ECHTE BERECHNUNG
+    netto, netto_hh = berechne_netto_genauer(brutto, steuerklasse, kinder)
+    rente_luecke, bu_luecke = berechne_alle_luecken(brutto, netto_hh, alter, 67, 2.0)
+    foerder_liste = ermittle_foerderung(brutto, steuerklasse, kinder, status)
+    foerder_str = "\n- ".join(foerder_liste)
+
+# KACHELN
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Dein Netto (mtl.)", f"{netto_hh:.0f} €", help="Geschätztes Haushaltsnetto inkl. Kindergeld")
-col2.metric("Rentenlücke", f"{rente_luecke:.0f} €", delta="- Handlungsbedarf", delta_color="inverse")
-col3.metric("BU-Lücke", f"{bu_luecke:.0f} €", delta="- Existenzbedrohend", delta_color="inverse", help="Fehlbetrag bei Erwerbsminderung")
-col4.metric("Förder-Chancen", f"{len(foerder_liste)}", delta="Staatl. Zuschüsse", delta_color="normal")
+col1.metric("Dein Netto (mtl.)", f"{netto_hh:.0f} €")
+col2.metric("Rentenlücke", f"{rente_luecke:.0f} €", delta="- Bedarf" if brutto > 0 else None, delta_color="inverse")
+col3.metric("BU-Lücke", f"{bu_luecke:.0f} €", delta="- Risiko" if brutto > 0 else None, delta_color="inverse")
+col4.metric("Förder-Chancen", f"{len(foerder_liste)}", delta="Möglich" if brutto > 0 else None, delta_color="normal")
 
 st.divider()
 
@@ -108,27 +127,26 @@ st.divider()
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
+# System-Prompt kennt die Daten, weiß aber, dass er höflich warten soll
 system_prompt = f"""
 Du bist Günther, R+V Experte.
 Kunde: {alter}J, {status}, {kinder} Kinder. Brutto {brutto}.
-Finanz-Check:
-1. Netto-Haushalt: {netto_hh:.0f} €
-2. Rentenlücke: {rente_luecke:.0f} €
-3. BU-LÜCKE (WICHTIG!): {bu_luecke:.0f} € (Wenn er nicht mehr arbeiten kann).
-4. Förder-Optionen: {foerder_str}.
+Lücken (nur relevant wenn Brutto > 0):
+- Rentenlücke: {rente_luecke:.0f} €
+- BU-LÜCKE: {bu_luecke:.0f} €
 
-Deine Aufgabe:
-- Erwähne die hohe BU-Lücke, das ist existenzbedrohend! Priorität 1.
-- Empfiehl die R+V BerufsunfähigkeitsPolice.
-- Sei freundlich, Duz-Form.
+Regeln:
+1. Wenn der Kunde noch kein Brutto eingegeben hat (Brutto=0), bitte ihn freundlich darum.
+2. Wenn Brutto da ist: Analysiere die Lücken erst, wenn der Kunde im Chat das "Go" gibt oder "Ja" sagt.
+3. Sei empathisch, nutze das "Du".
+4. Empfiehl R+V Produkte passend zur Lücke (BU-Police, PrivatRente, etc.).
 """
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    if bu_luecke > 1000:
-        intro_text = f"### 👋 Hallo!\nIch bin Günther. Ich habe deine Daten geprüft.\n\nEhrlich gesagt: Die **BU-Lücke von {bu_luecke:.0f} €** macht mir Sorgen. Das ist das Geld, das fehlt, wenn du krankheitsbedingt ausfällst. Lass uns zuerst die **R+V BerufsunfähigkeitsPolice** ansehen, bevor wir zur Rente kommen, okay?"
-    else:
-        intro_text = f"### 👋 Hallo!\nIch bin Günther. Dein Netto sieht gut aus ({netto_hh:.0f} €). Bei der Rente fehlen uns später ca. **{rente_luecke:.0f} €**. Wollen wir uns ansehen, wie wir das mit staatlicher Förderung schließen?"
+    
+    # ÄNDERUNG: Immer nette Begrüßung, keine sofortige Analyse
+    intro_text = f"### 👋 Hallo!\nIch bin Günther, dein persönlicher R+V Berater.\n\nSoll ich deine Daten analysieren und wir steigen gemeinsam in die Versicherungsberatung ein?"
         
     st.session_state.messages.append({"role": "assistant", "content": intro_text})
 
@@ -136,47 +154,26 @@ for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
-# --- NEU: INTELLIGENTE MODELL-SUCHE ---
-def finde_bestes_modell():
-    # Wir fragen die API, welche Modelle verfügbar sind
-    try:
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        # Wir bevorzugen 'flash' (schnell), dann 'pro'
-        for m in available_models:
-            if "flash" in m and "1.5" in m: return m
-        for m in available_models:
-            if "pro" in m and "1.5" in m: return m
-        for m in available_models:
-            if "pro" in m: return m
-            
-        # Wenn nichts passt, nehmen wir das erste verfügbare
-        return available_models[0] if available_models else None
-    except:
-        # Fallback, falls das Listen fehlschlägt
-        return "models/gemini-1.5-flash"
-
-if prompt := st.chat_input("Deine Frage an Günther..."):
+if prompt := st.chat_input("Antworte Günther (z.B. 'Ja, gerne')..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     try:
-        # Modell dynamisch finden
-        modell_name = finde_bestes_modell()
-        # st.caption(f"Debug: Nutze Modell {modell_name}") # Kannst du einkommentieren zum Testen
+        # Wir nutzen 'gemini-1.5-flash'
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        model = genai.GenerativeModel(modell_name)
         history = [{"role": "user", "parts": [system_prompt]}]
         for m in st.session_state.messages:
             r = "user" if m["role"] == "user" else "model"
             history.append({"role": r, "parts": [m["content"]]})
             
-        with st.spinner("..."):
+        with st.spinner("Günther denkt nach..."):
             response = model.generate_content(history)
             st.chat_message("assistant").markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
+            
     except Exception as e:
-        st.error(f"Fehler: {e}. Bitte prüfe den API Key.")
+        if "429" in str(e):
+            st.warning("⚠️ Kurz warten (Limit erreicht)...")
+        else:
+            st.error(f"Fehler: {e}")
