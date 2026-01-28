@@ -62,7 +62,6 @@ n_hh, r_luecke, b_luecke, f_anz = berechne_analyse(brutto, st_klasse, kinder, al
 
 # --- NAVIGATION ---
 
-# SEITE 1: BERATUNGS-DASHBOARD
 if st.session_state.page == "beratung":
     st.title("R+V Vorsorge-Cockpit")
     
@@ -76,11 +75,11 @@ if st.session_state.page == "beratung":
     c_eval1, c_eval2 = st.columns(2)
     with c_eval1:
         if b_luecke > 800:
-            st.error(f"🚨 **Kritisch:** Deine BU-Lücke von {b_luecke:.0f}€ gefährdet deinen Lebensstandard sofort bei Krankheit.")
+            st.error(f"🚨 **Kritisch:** Deine BU-Lücke von {b_luecke:.0f}€ gefährdet deinen Lebensstandard.")
         else: st.success("✅ BU-Absicherung ist stabil.")
     with c_eval2:
         if r_luecke > 1000:
-            st.warning(f"📉 **Handlungsbedarf:** Deine Rentenlücke von {r_luecke:.0f}€ wird im Alter spürbar.")
+            st.warning(f"📉 **Handlungsbedarf:** Deine Rentenlücke von {r_luecke:.0f}€ erfordert Aufmerksamkeit.")
         else: st.success("✅ Rentenplanung sieht gut aus.")
 
     st.divider()
@@ -91,7 +90,7 @@ if st.session_state.page == "beratung":
         if "GOOGLE_API_KEY" in st.secrets:
             genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
         
-        system_p = f"Du bist Günther, R+V Berater. Berate warmherzig und professionell. Daten: Brutto {brutto}€, Rentenlücke {r_luecke:.0f}€, BU-Lücke {b_luecke:.0f}€."
+        system_p = f"Du bist Günther, R+V Berater. Berate warmherzig und professionell. Daten: Brutto {brutto}€, Netto {n_hh:.0f}€, Rentenlücke {r_luecke:.0f}€, BU-Lücke {b_luecke:.0f}€."
         if not st.session_state.messages: 
             st.session_state.messages.append({"role": "assistant", "content": "Moin! Ich bin Günther. 👋 Ich hab mir deine Zahlen mal angesehen. Sollen wir über die Details sprechen?"})
         
@@ -104,21 +103,31 @@ if st.session_state.page == "beratung":
             st.session_state.messages.append({"role": "user", "content": prompt})
             try:
                 model = genai.GenerativeModel('gemini-1.5-flash')
+                # Optimierte History (nur letzte 2 Nachrichten + System Prompt)
                 history = [{"role": "user", "parts": [system_p]}]
-                for m in st.session_state.messages[-3:]:
+                for m in st.session_state.messages[-2:]:
                     history.append({"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]})
                 
-                res = model.generate_content(history)
-                st.session_state.messages.append({"role": "assistant", "content": res.text})
-                st.rerun()
-            except Exception as e:
-                st.error("⏳ Kurze Pause... Google ist ausgelastet. Bitte in 10 Sek. nochmal senden.")
+                with st.spinner("Günther überlegt..."):
+                    # Automatischer Retry bei 429 Fehlern
+                    for attempt in range(3):
+                        try:
+                            res = model.generate_content(history)
+                            st.session_state.messages.append({"role": "assistant", "content": res.text})
+                            st.rerun()
+                            break
+                        except Exception as e:
+                            if "429" in str(e) and attempt < 2:
+                                time.sleep(3) # Warte 3 Sekunden
+                                continue
+                            else: raise e
+            except:
+                st.error("⏳ Google braucht eine Pause. Bitte warte 10 Sekunden und klicke dann erneut auf Senden.")
 
     with r_col:
         st.subheader("🚀 Unsere neue Abschlussstrecke")
         st.markdown("""
         **Safe&Smart: Die Ansparkombi.**
-        Kombiniere die Sicherheit der R+V mit den Renditechancen der Märkte. 
         In wenigen Schritten zur individuellen Geldanlage.
         """)
         if st.button("Jetzt Safe&Smart simulieren ➔", type="primary", use_container_width=True):
@@ -126,7 +135,6 @@ if st.session_state.page == "beratung":
             st.rerun()
         st.image("https://www.ruv.de/static-files/ruvde/images/privatkunden/geldanlage/safe-smart/safe-smart-visual-teaser.jpg")
 
-# SEITE 2: PRODUKT & RECHNER
 elif st.session_state.page == "produkt_info":
     st.title("📈 Safe&Smart Investment-Rechner")
     cl, cr = st.columns(2)
@@ -146,25 +154,22 @@ elif st.session_state.page == "produkt_info":
         st.session_state.page = "idd_check"
         st.rerun()
 
-# SEITE 3: IDD DETAIL
 elif st.session_state.page == "idd_check":
     st.title("🛡️ Angemessenheitsprüfung & IDD")
     with st.form("idd_form_detail"):
         st.subheader("Anlageprofil")
         h_horizont = st.selectbox("Anlagehorizont", ["Kurzfristig (< 5 Jahre)", "Mittelfristig (5-10 Jahre)", "Langfristig (> 10 Jahre)"])
         r_klasse = st.select_slider("Risikoklasse (SRI)", options=[1, 2, 3, 4, 5], value=3)
-        
         st.subheader("Nachhaltigkeitspräferenzen (ESG)")
-        esg_env = st.checkbox("Ökologische Ziele (Umweltschutz, Klima)")
-        esg_soc = st.checkbox("Soziale Ziele (Menschenrechte, Arbeitsschutz)")
-        esg_gov = st.checkbox("Gute Unternehmensführung (Anti-Korruption)")
+        esg_env = st.checkbox("Ökologische Ziele")
+        esg_soc = st.checkbox("Soziale Ziele")
+        esg_gov = st.checkbox("Gute Unternehmensführung")
         
         if st.form_submit_button("Profil bestätigen", use_container_width=True):
             st.session_state.idd_results = {"rk": r_klasse, "esg": esg_env or esg_soc or esg_gov}
             st.session_state.page = "zusammenfassung"
             st.rerun()
 
-# SEITE 4: FINALE
 elif st.session_state.page == "zusammenfassung":
     st.title("🏁 Dein Spar-Erfolg")
     st.balloons()
@@ -174,7 +179,7 @@ elif st.session_state.page == "zusammenfassung":
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #003366 0%, #0055aa 100%); padding: 40px; border-radius: 20px; text-align: center; color: white; border: 3px solid #ffcc00; margin-bottom: 25px;">
         <h2 style="color: #ffcc00; margin-bottom: 0;">HERZLICHEN GLÜCKWUNSCH!</h2>
-        <p style="font-size: 1.2rem;">Durch deine Entscheidung sparst du ein Vermögen von voraussichtlich</p>
+        <p style="font-size: 1.2rem;">Dein Vermögensziel beträgt voraussichtlich</p>
         <h1 style="font-size: 5.5rem; margin: 10px 0;">{data['summe']:,.0f} €*</h1>
         <p style="font-size: 1rem; opacity: 0.8;">*Kaufkraftbereinigt im Zieljahr {2026 + data['jahre']}.</p>
     </div>
@@ -182,7 +187,7 @@ elif st.session_state.page == "zusammenfassung":
     
     c_res1, c_res2 = st.columns(2)
     with c_res1:
-        st.info(f"### 📋 Angemessenheit\nDas Produkt passt zu deiner Risikoklasse **{idd['rk']}**. Deine Nachhaltigkeitspräferenzen werden berücksichtigt.")
+        st.info(f"### 📋 Angemessenheit\nDas Produkt passt zu deiner Risikoklasse **{idd['rk']}**.")
     with c_res2:
         st.markdown("### 📄 Deine Dokumente\n- 📄 Beratungsprotokoll\n- 📄 Produktinformationsblatt\n- 📄 Bedingungen (AVB)")
 
