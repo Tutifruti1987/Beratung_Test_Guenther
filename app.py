@@ -77,9 +77,11 @@ if st.session_state.page == "beratung":
     with c_eval1:
         if b_luecke > 800:
             st.error(f"🚨 **Kritisch:** Deine BU-Lücke von {b_luecke:.0f}€ gefährdet deinen Lebensstandard sofort bei Krankheit.")
+        else: st.success("✅ BU-Absicherung ist stabil.")
     with c_eval2:
         if r_luecke > 1000:
             st.warning(f"📉 **Handlungsbedarf:** Deine Rentenlücke von {r_luecke:.0f}€ wird im Alter spürbar.")
+        else: st.success("✅ Rentenplanung sieht gut aus.")
 
     st.divider()
     l_col, r_col = st.columns(2)
@@ -88,8 +90,10 @@ if st.session_state.page == "beratung":
         st.subheader("💬 Chat mit Günther")
         if "GOOGLE_API_KEY" in st.secrets:
             genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        system_p = f"Du bist Günther, R+V Berater. Sachlich, warmherzig. Brutto {brutto}, BU-Lücke {b_luecke}."
-        if not st.session_state.messages: st.session_state.messages.append({"role": "assistant", "content": "Moin! Ich bin Günther. Schauen wir uns deine Lücken mal gemeinsam an?"})
+        
+        system_p = f"Du bist Günther, R+V Berater. Berate warmherzig und professionell. Daten: Brutto {brutto}€, Rentenlücke {r_luecke:.0f}€, BU-Lücke {b_luecke:.0f}€."
+        if not st.session_state.messages: 
+            st.session_state.messages.append({"role": "assistant", "content": "Moin! Ich bin Günther. 👋 Ich hab mir deine Zahlen mal angesehen. Sollen wir über die Details sprechen?"})
         
         container = st.container(height=350)
         with container:
@@ -99,11 +103,16 @@ if st.session_state.page == "beratung":
         if prompt := st.chat_input("Frage stellen..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             try:
-                model = genai.GenerativeModel('gemini-2.0-flash')
-                res = model.generate_content([system_p] + [m["content"] for m in st.session_state.messages[-3:]])
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                history = [{"role": "user", "parts": [system_p]}]
+                for m in st.session_state.messages[-3:]:
+                    history.append({"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]})
+                
+                res = model.generate_content(history)
                 st.session_state.messages.append({"role": "assistant", "content": res.text})
                 st.rerun()
-            except: st.error("KI-Fehler")
+            except Exception as e:
+                st.error("⏳ Kurze Pause... Google ist ausgelastet. Bitte in 10 Sek. nochmal senden.")
 
     with r_col:
         st.subheader("🚀 Unsere neue Abschlussstrecke")
@@ -162,7 +171,6 @@ elif st.session_state.page == "zusammenfassung":
     data = st.session_state.investment_data
     idd = st.session_state.idd_results
     
-    # EMOTIONALE HERVORHEBUNG
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #003366 0%, #0055aa 100%); padding: 40px; border-radius: 20px; text-align: center; color: white; border: 3px solid #ffcc00; margin-bottom: 25px;">
         <h2 style="color: #ffcc00; margin-bottom: 0;">HERZLICHEN GLÜCKWUNSCH!</h2>
@@ -174,22 +182,13 @@ elif st.session_state.page == "zusammenfassung":
     
     c_res1, c_res2 = st.columns(2)
     with c_res1:
-        st.info(f"### 📋 Angemessenheit\nDas Produkt Safe&Smart passt zu deiner Risikoklasse **{idd['rk']}**. Deine Nachhaltigkeitspräferenzen werden berücksichtigt.")
+        st.info(f"### 📋 Angemessenheit\nDas Produkt passt zu deiner Risikoklasse **{idd['rk']}**. Deine Nachhaltigkeitspräferenzen werden berücksichtigt.")
     with c_res2:
-        st.markdown("""
-        ### 📄 Deine Dokumente
-        - 📄 **Beratungsprotokoll**
-        - 📄 **Produktinformationsblatt (BIB)**
-        - 📄 **Bedingungen (AVB)**
-        """)
+        st.markdown("### 📄 Deine Dokumente\n- 📄 Beratungsprotokoll\n- 📄 Produktinformationsblatt\n- 📄 Bedingungen (AVB)")
 
     st.divider()
-    
-    # GROSSER ABSCHLUSS-BUTTON
-    if st.button("🚀 JETZT SIMULIERT ABSCHLIESSEN", type="primary", use_container_width=True, help="Klicke hier, um den Abschluss zu simulieren"):
-        st.success("🎉 Antrag erfolgreich simuliert! In der Realität würden deine Daten nun verschlüsselt an die R+V übermittelt.")
-        st.confetti() # Falls verfügbar, sonst bleibt balloons
-
+    if st.button("🚀 JETZT SIMULIERT ABSCHLIESSEN", type="primary", use_container_width=True):
+        st.success("🎉 Antrag erfolgreich simuliert!")
     if st.button("« Zurück zum Start", use_container_width=True):
         st.session_state.page = "beratung"
         st.rerun()
