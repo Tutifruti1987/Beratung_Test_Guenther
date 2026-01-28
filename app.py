@@ -133,7 +133,7 @@ elif st.session_state.page == "produkt_info":
         st.line_chart(pd.DataFrame(verlauf, columns=["Kapital"]))
         st.metric("Voraussichtliche Kaufkraft", f"{verlauf[-1]:,.0f} €")
     
-    if st.button("Weiter zum Angemessenheits-Check »", type="primary"):
+    if st.button("Weiter zum Angemessenheits-Check »", type="primary", use_container_width=True):
         st.session_state.page = "idd_check"
         st.rerun()
 
@@ -143,14 +143,14 @@ elif st.session_state.page == "idd_check":
     with st.form("idd_form_detail"):
         st.subheader("Anlageprofil")
         h_horizont = st.selectbox("Anlagehorizont", ["Kurzfristig (< 5 Jahre)", "Mittelfristig (5-10 Jahre)", "Langfristig (> 10 Jahre)"])
-        r_klasse = st.select_slider("Risikoklasse (SRI)", options=[1, 2, 3, 4, 5], value=3, help="1 = Sicher, 5 = Hochriskant")
+        r_klasse = st.select_slider("Risikoklasse (SRI)", options=[1, 2, 3, 4, 5], value=3)
         
         st.subheader("Nachhaltigkeitspräferenzen (ESG)")
         esg_env = st.checkbox("Ökologische Ziele (Umweltschutz, Klima)")
         esg_soc = st.checkbox("Soziale Ziele (Menschenrechte, Arbeitsschutz)")
         esg_gov = st.checkbox("Gute Unternehmensführung (Anti-Korruption)")
         
-        if st.form_submit_button("Profil bestätigen"):
+        if st.form_submit_button("Profil bestätigen", use_container_width=True):
             st.session_state.idd_results = {"rk": r_klasse, "esg": esg_env or esg_soc or esg_gov}
             st.session_state.page = "zusammenfassung"
             st.rerun()
@@ -164,26 +164,32 @@ elif st.session_state.page == "zusammenfassung":
     
     # EMOTIONALE HERVORHEBUNG
     st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #003366 0%, #0055aa 100%); padding: 40px; border-radius: 20px; text-align: center; color: white; border: 3px solid #ffcc00;">
+    <div style="background: linear-gradient(135deg, #003366 0%, #0055aa 100%); padding: 40px; border-radius: 20px; text-align: center; color: white; border: 3px solid #ffcc00; margin-bottom: 25px;">
         <h2 style="color: #ffcc00; margin-bottom: 0;">HERZLICHEN GLÜCKWUNSCH!</h2>
         <p style="font-size: 1.2rem;">Durch deine Entscheidung sparst du ein Vermögen von voraussichtlich</p>
-        <h1 style="font-size: 5rem; margin: 10px 0;">{data['summe']:,.0f} €*</h1>
-        <p style="font-size: 1rem; opacity: 0.8;">*Kaufkraftbereinigt im Zieljahr. Eine starke Leistung für deine Zukunft!</p>
+        <h1 style="font-size: 5.5rem; margin: 10px 0;">{data['summe']:,.0f} €*</h1>
+        <p style="font-size: 1rem; opacity: 0.8;">*Kaufkraftbereinigt im Zieljahr {2026 + data['jahre']}.</p>
     </div>
     """, unsafe_allow_html=True)
     
-    st.write("")
     c_res1, c_res2 = st.columns(2)
     with c_res1:
-        st.info(f"### 📋 Empfehlung\nBasierend auf Risikoklasse **{idd['rk']}** ist Safe&Smart für dich **angemessen**. Deine Nachhaltigkeitswünsche werden im R+V Portfolio berücksichtigt.")
+        st.info(f"### 📋 Angemessenheit\nDas Produkt Safe&Smart passt zu deiner Risikoklasse **{idd['rk']}**. Deine Nachhaltigkeitspräferenzen werden berücksichtigt.")
     with c_res2:
         st.markdown("""
         ### 📄 Deine Dokumente
-        - 📄 **Individuelles Beratungsprotokoll**
+        - 📄 **Beratungsprotokoll**
         - 📄 **Produktinformationsblatt (BIB)**
-        - 📄 **Allgemeine Bedingungen (AVB)**
+        - 📄 **Bedingungen (AVB)**
         """)
 
-    if st.button("« Zurück zum Start"):
+    st.divider()
+    
+    # GROSSER ABSCHLUSS-BUTTON
+    if st.button("🚀 JETZT SIMULIERT ABSCHLIESSEN", type="primary", use_container_width=True, help="Klicke hier, um den Abschluss zu simulieren"):
+        st.success("🎉 Antrag erfolgreich simuliert! In der Realität würden deine Daten nun verschlüsselt an die R+V übermittelt.")
+        st.confetti() # Falls verfügbar, sonst bleibt balloons
+
+    if st.button("« Zurück zum Start", use_container_width=True):
         st.session_state.page = "beratung"
         st.rerun()
